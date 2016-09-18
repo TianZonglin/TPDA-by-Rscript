@@ -1,0 +1,185 @@
+
+----------------------------------
+▉涉及读写及说明（即大体步骤）：
+----------------------------------
+程序1【抽样+100.R】		
+	~读weishengsu_change.csv		读取全部数据进行抽样，抽取100条记录存至Gene100.csv.
+	~输出Gene100.csv
+程序2【NO_1_FIRSTSTEP.JAVA】	
+	~读Gene100.csv			对数据进行离散度为2的离散操作，结果存至Mult_data_100.txt.
+	~输出Mult_data_100.txt
+程序3【Aprior算法.R】		
+	~读Mult_data_100.txt		对离散好的数据执行Apriori算法，获得规则集合存在Result.csv.
+	~输出Result.csv
+程序4【NO_2_SECONDSTEP.JAVA】	
+	~读Result.csv			对规则集合进行规范、分割等操作，结果（五元组）存至sum_data.csv.
+	~输出sum_data.csv
+程序5【关联规则排序.R】	
+	~读Gene100.csv			读源数据是为了对源数据进行排序.
+	~读sum_data.csv			此处五元组实际作为三元组（from.to.value）处理.
+	~转储geneNode.csv			此处是上述经过排序算法后获得的‘节点顺序’.
+	~转储express100_after.csv		以‘节点顺序’为指导，重新将源数据Gene100.csv调整并存入express100_after.csv.
+	~读weishengsu_add_1_and_4.csv	对抽样的100基因调整后，在最前面加上“4特定基因+1特定表型”，存至Sample.csv.
+	~输出Sample.csv
+程序6【三阶段+1+4.R】		
+	~读Sample.csv			此时读入的数据已为关联规则调整后的了.
+	~转储SampleAfterNumeric.csv		存储数值化的源数据仅仅为了查看
+	~转储SampleAfterLisan.csv		存储离散化的源数据仅仅为了查看
+	~转储SampleAfterChangeNB.csv	存储数值替换后的源数据仅仅为了查看
+	~暂存c2links.csv			此处暂存的是互信息的结果（三元组），属于三阶段之前的准备.
+	~暂存XResultX.csv			三阶段执行后的结果（未加工），之后会进行最后的比较计算.
+	~转储‘分阶段存储数据.txt’		每次三阶段执行都将存入一条数据	
+	~转储‘总体数据.txt’			将全部程序运行完后总的数据表存储下来
+	~END
+程序7【九种算法.R】
+	~读Sample.csv			九种算法只是读取一次数据（要离散），然后九算法分别对其计算之.
+	~转储‘分阶段存储数据.txt’		每次三阶段执行都将存入一条数据	
+
+“暂存”意为程序中先将其写入文件，后又马上将其读出，只是起到将过程数据以文件形式保存下来的目的
+“转储”意为将结果或需要查看的中间数据存储下来，存储后不会马上对其访问
+
+
+---------------------------------
+▉代码整体思想及关键位置说明：
+---------------------------------
+程序1【抽样+100.R】
+	~读入全部数据（大小为101M的源数据）
+		AllG<-read.csv("D:\\RST\\weishengsu_expression_change.csv",header = F,stringsAsFactors = FALSE)
+	~使用sample函数进行抽样
+		G100<-sample(AllG,100)
+程序2【NO_1_FIRSTSTEP.JAVA】	
+	~对数据进行离散度为2的离散操作，结果存至Mult_data_100.txt
+	~代码中的‘static int l = 298 ’按实际情况修改其值
+
+程序3【Aprior算法.R】		
+	~使用封装函数进行关联规则挖掘
+		rules=apriori(tr,parameter=list(support=0.15,confidence=0.45,minlen=2,maxlen=2)) 
+	~转换数据格式
+		outdata<-as(rules,"data.frame")
+程序4【NO_2_SECONDSTEP.JAVA】	
+	~仅仅是对Aprior算法的结果进行进一步规范化，结果（五元组）存至sum_data.csv
+	~代码中‘static int r = 705’即经过Apriori运行过后的rules条数，按实际情况修改其值
+程序5【关联规则排序.R】	
+	~使用广度优先遍历进行节点编号
+		~先对头结点编号
+		~再对头结点的后继编号
+		~去重，重构
+		~得到二元组（排序权重,节点名称），暂存至geneNode.csv
+		~使用上述结果重新调整源数据（降序）
+			two <- one[order(one[,2],decreasing=T),] 
+	~在对100个抽样基因的信息排序调整后，将“4特定基因+1表型”附加到数据的开头，成为105个节点的数据集
+		SampleA<-rbind(Vitamin5,two)
+程序6【三阶段+5+4.R】*
+	~代码整体思想：
+		全部程序的输入是抽样好的100条数据，
+		STEP1.对这100数据追加成100+9条数据
+		STEP2.选择排序或者不排序，
+			如果排序那么要顺序执行【NO_1_FIRSTSTEP.JAVA】->【Aprior算法.R】->【NO_2_SECONDSTEP.JAVA】->【关联规则排序.R】
+				执行完得到的结果是排好序的109条数据
+			如果不排序，直接按STEP1的抽样结果当做程序的输入
+		STEP3.将109数据进行离散化，涉及函数ExchangeSplit和ChangeNumeric，得到离散化的源数据
+		STEP4.开始三阶段算法的准备工作，即计算互信息，涉及函数getDoubleHang_value
+		STEP5.这一步可有可无，进行对互信息三元组的筛选（现在直接不筛选），涉及函数AllResult和PartlyResult
+		STEP6.插曲，把数据的名字进行替换，涉及函数Translat 
+		STEP7.开始三阶段的第一阶段，详情参照老师给的三阶段的文档
+·		STEP8.进行三阶段的第二阶段，涉及函数Info，其为了计算条件互信息，详情参照老师给的三阶段文档
+		STEP9.进行三阶段的第三阶段，涉及函数Info，其为了计算条件互信息，详情参照老师给的三阶段文档
+		STEP10.上述三阶段完成后结果为一组‘关系’，下一步对这组关系按照规则进行相应的比较计算，涉及函数CheckInArr和ToArrayStr
+		STEP11.上述全部代码全部封装在一个函数体内，在最后可用函数ThreePhrasesDependencyAlgorithm调用，函数参数即为相关实验变量参数，
+		            这样做的目的是可以一次运行完大量参数不同的实验（时间很长），具体参见代码
+	~全部函数及功能：
+		ChangeNumeric<-function(tempz,dls)	
+			其完成了源数据的离散处理，参数tempz是源数据，参数dls是离散度		
+		ExchangeSplit<-function(complexx)
+			其完成了对离散后的源数据进行‘等区间替换’的工作，即相同离散区间的元素全部替换成一个值，此值从正整数1开始，参数complexx代表一列源数据
+		getDoubleHang_value<-function(mylist1,mylist2)
+			其完成了互信息计算的工作，代码完全对应互信息计算的公式，公式参见老师给的三阶段文档
+			其结果为三元组（from,to,value）,参数a为from列，b为to列，返回值为value
+		AllResult<-function()
+			其是对互信息结果的后续操作，AllResult不进行筛选
+		PartlyResult<-function()
+			作用同上，但是本函数对其结果进行筛选，把‘基因-基因’关系全部剔除，只保留含表型的关系（此部分目前没用）
+		Translat <- function(data_nx)
+			其完成了源数据‘列’（即一个节点）名字的替换，不管源数据列名叫什么，统一替换成n.x的形式，data_nx是基因名称
+		Info <- function(gxi,gyi,cutset,gen)
+			其完成了条件互信息的计算，代码完全参照条件互信息的公式，公式参照老师给的三阶段文档
+			gxi,gyi对应公式可知，cutset为节点之间的割集,gen为源数据副本
+			*此函数使用过程中参数会产生零值，故要注意相关值非零的判断及为零值的相应对策
+		CheckInArr<-function(nm,arr)
+			其检测三阶段结果关系集中的某关系是否在对照关系集内，nm是待对照组，arr是对照组
+		ToArrayStr<-function(df)
+			其把满足关系的集合（原本应为data.frame结构）转化为字符串，便于打印
+		ThreePhrasesDependencyAlgorithm<-function(dim,wt1,wt2,wt3,methodd,sourcee)
+			其把整个代码函数化，方便调用，使用时直接找到文件的最下方，调用ThreePhrasesDependencyAlgorithm()函数
+			与其配合的全局变量： TPDA_OutputInfomation是存储最终结果的表结构的变量
+	              				CntTdpa是控制上述表结构写入的index
+			函数参数： dim是离散度
+				wt1,wt2,wt3是三阶段算法的三个阈值
+				methodd是离散数据时使用的方法
+				sourcee是三阶段的输入源	
+ 
+程序7【九种算法.R】
+	~代码整体思想：
+		全部程序的输入是抽样好的100条数据，
+		STEP1.对这100数据追加成100+9条数据
+		STEP2.选择排序或者不排序，
+			如果排序那么要顺序执行【NO_1_FIRSTSTEP.JAVA】->【Aprior算法.R】->【NO_2_SECONDSTEP.JAVA】->【关联规则排序.R】
+				执行完得到的结果是排好序的109条数据
+			如果不排序，直接按STEP1的抽样结果当做程序的输入
+		STEP3.将109数据进行离散化，得到离散化的源数据
+		STEP4.此代码特点是一组参数值跑九种算法，用函数OPinfo进行区分
+		STEP5.函数OPinfo中选定一种算法并执行得结果后（和三阶段相似）进行对结果集的比较计算涉及函数CheckInArr和ToArrayStr
+		STEP6.上述的全部代码被封装在一个函数体内，每次用函数NineAlgorithmTest进行执行
+	~全部函数及功能：
+		OPinfo<-function(mtd,mdata)
+			其完成了对某种算法及这种算法结果的对比计算，参数mtd是算法名，参数mdata是算法的结果（九种算法结果的计算全依靠先前导入的bnlearn的包）
+		CheckInArr<-function(nm,arr)
+			其检测三阶段结果关系集中的某关系是否在对照关系集内，nm是待对照组，arr是对照组
+		ToArrayStr<-function(df)
+			其把满足关系的集合（原本应为data.frame结构）转化为字符串，便于打印
+		NineAlgorithmTest<-function(methodd,lsd,sourcee)
+			其把整个代码函数化，方便调用，使用时直接找到文件的最下方，调用NineAlgorithmTest函数
+			参数methodd是离散的方式,lsd是离散度,sourcee是输入的源文件
+
+	
+------------------------------------------------------
+▉【需要排序】的情况下的操作步骤及每步的输入输出：
+------------------------------------------------------
+步骤1【抽样+100.R】		【读weishengsu_change.csv】		【输出Gene100.csv】
+步骤2【NO_1_FIRSTSTEP.JAVA】	【读Gene100.csv】			【输出Mult_data_100.txt】
+步骤3【Aprior算法.R】		【读Mult_data_100.txt】		【输出Result.csv】
+步骤4【NO_2_SECONDSTEP.JAVA】	【读Result.csv】			【输出sum_data.csv】
+步骤5【关联规则排序.R】		【读sum_data.csv】			【输出express100_after.csv】
+完成上述后：
+步骤6.1【三阶段+5+4.R】		【读express100_after.csv】		【输出‘存储数据.txt】
+步骤6.2【九种算法.R】		【读express100_after.csv】		【输出‘存储数据.txt】
+
+
+----------------------------------------------------
+▉【不排序】的情况下的操作步骤及每步的输入输出：
+----------------------------------------------------
+步骤1.1【三阶段+5+4.R】		【直接读源抽样Gene100_x.csv】	【输出‘存储数据.txt】
+步骤1.2【九种算法.R】		【直接读源抽样Gene100_x.csv】	【输出‘存储数据.txt】
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
